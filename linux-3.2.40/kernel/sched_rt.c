@@ -39,6 +39,7 @@ static inline struct rq *rq_of_rt_rq(struct rt_rq *rt_rq)
 	return container_of(rt_rq, struct rq, rt);
 }
 
+/* here!!! */
 static inline struct rt_rq *rt_rq_of_se(struct sched_rt_entity *rt_se)
 {
 	struct task_struct *p = rt_task_of(rt_se);
@@ -86,9 +87,9 @@ static inline void rt_clear_overload(struct rq *rq)
 static void update_rt_migration(struct rt_rq *rt_rq)
 {
 	if (rt_rq->rt_nr_migratory && rt_rq->rt_nr_total > 1) {
-		if (!rt_rq->overloaded) {
+		if (!rt_rq->overloaded) {  /*  */
 			rt_set_overload(rq_of_rt_rq(rt_rq));
-			rt_rq->overloaded = 1;
+			rt_rq->overloaded = 1; /* 可进行task迁移 */
 		}
 	} else if (rt_rq->overloaded) {
 		rt_clear_overload(rq_of_rt_rq(rt_rq));
@@ -96,6 +97,7 @@ static void update_rt_migration(struct rt_rq *rt_rq)
 	}
 }
 
+/* here!! */
 static void inc_rt_migration(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
 {
 	if (!rt_entity_is_task(rt_se))
@@ -340,6 +342,7 @@ static inline void list_del_leaf_rt_rq(struct rt_rq *rt_rq)
 #define for_each_sched_rt_entity(rt_se) \
 	for (; rt_se; rt_se = NULL)
 
+/* here!!! */
 static inline struct rt_rq *group_rt_rq(struct sched_rt_entity *rt_se)
 {
 	return NULL;
@@ -715,13 +718,14 @@ static void update_curr_rt(struct rq *rq)
 
 #if defined CONFIG_SMP
 
+/* here!! */
 static void
 inc_rt_prio_smp(struct rt_rq *rt_rq, int prio, int prev_prio)
 {
 	struct rq *rq = rq_of_rt_rq(rt_rq);
 
 	if (rq->online && prio < prev_prio)
-		cpupri_set(&rq->rd->cpupri, rq->cpu, prio);
+		cpupri_set(&rq->rd->cpupri, rq->cpu, prio);  /* 设置cpu优先级 */
 }
 
 static void
@@ -743,13 +747,14 @@ void dec_rt_prio_smp(struct rt_rq *rt_rq, int prio, int prev_prio) {}
 #endif /* CONFIG_SMP */
 
 #if defined CONFIG_SMP || defined CONFIG_RT_GROUP_SCHED
+/* here!!! */
 static void
 inc_rt_prio(struct rt_rq *rt_rq, int prio)
 {
 	int prev_prio = rt_rq->highest_prio.curr;
 
-	if (prio < prev_prio)
-		rt_rq->highest_prio.curr = prio;
+	if (prio < prev_prio)  /* 注意，值越小优先级越高 */
+		rt_rq->highest_prio.curr = prio;  /* 更新运行队列的最高优先级 */
 
 	inc_rt_prio_smp(rt_rq, prio, prev_prio);
 }
@@ -812,6 +817,7 @@ dec_rt_group(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
 
 #else /* CONFIG_RT_GROUP_SCHED */
 
+/* here!! */
 static void
 inc_rt_group(struct sched_rt_entity *rt_se, struct rt_rq *rt_rq)
 {
@@ -852,7 +858,7 @@ static void __enqueue_rt_entity(struct sched_rt_entity *rt_se, bool head)
 {
 	struct rt_rq *rt_rq = rt_rq_of_se(rt_se);
 	struct rt_prio_array *array = &rt_rq->active;
-	struct rt_rq *group_rq = group_rt_rq(rt_se);
+	struct rt_rq *group_rq = group_rt_rq(rt_se);  //NULL
 	struct list_head *queue = array->queue + rt_se_prio(rt_se);
 
 	/*
@@ -867,11 +873,11 @@ static void __enqueue_rt_entity(struct sched_rt_entity *rt_se, bool head)
 	if (!rt_rq->rt_nr_running)
 		list_add_leaf_rt_rq(rt_rq);
 
-	if (head)
+	if (head) /* 是否需要添加到队列头 */
 		list_add(&rt_se->run_list, queue);
 	else
-		list_add_tail(&rt_se->run_list, queue);
-	__set_bit(rt_se_prio(rt_se), array->bitmap);
+		list_add_tail(&rt_se->run_list, queue);  /* 添加调度实体到优先级队列 */
+	__set_bit(rt_se_prio(rt_se), array->bitmap);  /* 设置相应的bit位 */
 
 	inc_rt_tasks(rt_se, rt_rq);
 }
@@ -899,13 +905,13 @@ static void dequeue_rt_stack(struct sched_rt_entity *rt_se)
 	struct sched_rt_entity *back = NULL;
 
 	for_each_sched_rt_entity(rt_se) {
-	//for (; rt_se; rt_se = NULL)
-		rt_se->back = back;
+	//等价于 for (; rt_se; rt_se = NULL) {
+		rt_se->back = back;  //rt_se->back = NULL
 		back = rt_se;
 	}
 
 	for (rt_se = back; rt_se; rt_se = rt_se->back) {
-		if (on_rt_rq(rt_se))
+		if (on_rt_rq(rt_se)) /* 该进程是否在运行队列上 */
 			__dequeue_rt_entity(rt_se);
 	}
 }
@@ -1038,7 +1044,7 @@ select_task_rq_rt(struct task_struct *p, int sd_flag, int flags)
 	 * This test is optimistic, if we get it wrong the load-balancer
 	 * will have to sort it out.
 	 */
-	 /* 满足以下条件后，进程p才会考虑找到一个新的rq，否则仍在当前的rq上执行 */
+	 /* 满足以下条件后，进程p才会考虑找到一个新的rq，否则仍在原来的rq上执行 */
 	 /* 如果能找到新的rq，那么该进程p就会被迁移到其他核上 */
 	if (curr && unlikely(rt_task(curr)) &&  /* 当前正在运行的进程是实时进程 */
 	    (curr->rt.nr_cpus_allowed < 2 ||  /* 当前进程只能在1个cpu上运行，如果当前进程可在多个核上运行，
@@ -1048,7 +1054,7 @@ select_task_rq_rt(struct task_struct *p, int sd_flag, int flags)
 		    int target = find_lowest_rq(p);
 
 		    if (target != -1) /* 如果找到合适的cpu，就会在后续将该task迁移到找到的cpu上 */
-			    cpu = target; /* 如果找不到，将继续在本cpu上运行 */
+			    cpu = target; /* 如果找不到，将继续在p所属的cpu上运行 */
 	    }
 	rcu_read_unlock();
 
@@ -1567,7 +1573,10 @@ skip:
 static void pre_schedule_rt(struct rq *rq, struct task_struct *prev)
 {
 	/* Try to pull RT tasks here if we lower this rq's prio */
-	if (rq->rt.highest_prio.curr > prev->prio)
+	/* 如果rq当前的最高优先级低于调度之前task的优先级，说明前一个进程结束了，
+	 * 可以去检测其他cpu上是否有更高优先级的任务需要执行，调用pull_rt_task
+	 */
+	if (rq->rt.highest_prio.curr > prev->prio) 
 		pull_rt_task(rq);
 }
 

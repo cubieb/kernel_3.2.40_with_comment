@@ -326,6 +326,7 @@ void sched_clock_init(void)
 	sched_clock_running = 1;
 }
 
+/* here!!!! */
 u64 sched_clock_cpu(int cpu)
 {
 	if (unlikely(!sched_clock_running))

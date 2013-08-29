@@ -75,6 +75,7 @@ int cpupri_find(struct cpupri *cp, struct task_struct *p,
 	if (task_pri >= MAX_RT_PRIO)
 		return 0;
 
+    /* 注意: 只能查找比自己优先级低的cpu，相等也不行 */
 	for (idx = 0; idx < task_pri; idx++) {
 		struct cpupri_vec *vec  = &cp->pri_to_cpu[idx];
 		int skip = 0;
@@ -225,7 +226,7 @@ int cpupri_init(struct cpupri *cp)
 	}
 
 	for_each_possible_cpu(i)
-		cp->cpu_to_pri[i] = CPUPRI_INVALID;
+		cp->cpu_to_pri[i] = CPUPRI_INVALID;  /* 设置每个cpu的优先级，CPUPRI_INVALID为最低，表示可被任何一个rq使用 */
 	return 0;
 
 cleanup:

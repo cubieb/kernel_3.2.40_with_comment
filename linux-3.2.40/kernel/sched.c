@@ -521,15 +521,15 @@ struct rt_rq {
 	unsigned long rt_nr_running;  /* 可运行实时进程的个数 */
 #if defined CONFIG_SMP || defined CONFIG_RT_GROUP_SCHED
 	struct {
-		int curr; /* highest queued rt task prio */
+		int curr; /* highest queued rt task prio，值越小优先级越高 */
 #ifdef CONFIG_SMP
 		int next; /* next highest */
 #endif
 	} highest_prio;
 #endif
 #ifdef CONFIG_SMP
-	unsigned long rt_nr_migratory;  /* 可以迁移到其他核上的tash数 */
-	unsigned long rt_nr_total;
+	unsigned long rt_nr_migratory;  /* 可以迁移到其他核上的task数 */
+	unsigned long rt_nr_total;  /* 实时进程的个数 */
 	int overloaded;  /* 可迁移的实时进程不为0，该标志被置位 */
 	struct plist_head pushable_tasks;  /* 可被push到其他核上的task_struct链表, 表头 */
 #endif
@@ -558,18 +558,28 @@ struct rt_rq {
  * object.
  *
  */
+ /* 为了减少共享数据冲突，提高可扩展性，调度器增加了一个新概念，根域。
+  * cpusets提供了一种机制，cpusets可以将部分CPU划入一个子集合，这个CPU子集
+  * 供某个任务或者某个任务组使用。各个cpusets之间可以重叠，如果某个cpuset
+  * 与其他cpuset没有重复CPU，那么将该cpuset称为独立的。每个独立的cpuset定义
+  * 为一个孤立的域（根域）。与根域有关的信息保存在数据结构root_domain中。
+  * 这些根域使得全局变量的作用域缩小为每域变量。当创建一个独立的cpuset时，
+  * 我们根据cpuset中各个CPU信息随之创建一个新的根域对象。默认情况下，单个
+  * 高层根域是由所有CPU成员构成。所有的实时调度决定都限制在一个根域范围内。
+ */
 struct root_domain {
-	atomic_t refcount;
-	atomic_t rto_count;
+	atomic_t refcount;  /* root_domain被rq引用的计数 */
+	/* 当一个cpu上有多于一个实时进程的时候，对应的cpu mask 位会被置位，并且cto_count++ */
+	atomic_t rto_count;  /* RT overload */
 	struct rcu_head rcu;
-	cpumask_var_t span;
-	cpumask_var_t online;
+	cpumask_var_t span;  /* 本domain包含的cpu，以mask形式体现，比如该domain有cpu0,1,2,3，那么该mask值为00001111 */
+	cpumask_var_t online;  /* 活跃cpu的mask，比如当前有cpu0,1,2,3，但只有cpu0是enable的，那么online值为00000001 */
 
 	/*
 	 * The "RT overload" flag: it gets set if a CPU has more than
 	 * one runnable RT task.
 	 */
-	cpumask_var_t rto_mask;
+	cpumask_var_t rto_mask;  /* 当一个cpu上有多于一个实时进程的时候，对应的cpu位会被置位，并且cto_count++ */
 	struct cpupri cpupri;
 };
 
@@ -648,7 +658,7 @@ struct rq {
 
 	unsigned char idle_balance;
 	/* For active balancing */
-	int post_schedule;
+	int post_schedule;  /* 有需要进行push时，置1 */
 	int active_balance;
 	int push_cpu;
 	struct cpu_stop_work active_balance_work;
@@ -792,12 +802,12 @@ static void update_rq_clock(struct rq *rq)
 {
 	s64 delta;
 
-	if (rq->skip_clock_update > 0)
+	if (rq->skip_clock_update > 0) /* 是否跳过更新clock */
 		return;
 
 	delta = sched_clock_cpu(cpu_of(rq)) - rq->clock;
 	rq->clock += delta;
-	update_rq_clock_task(rq, delta);
+	update_rq_clock_task(rq, delta);  /* do thing */
 }
 
 /*
@@ -2103,10 +2113,10 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
  * In theory, the compile should just see 0 here, and optimize out the call
  * to sched_rt_avg_update. But I don't trust it...
  */
-#if defined(CONFIG_IRQ_TIME_ACCOUNTING) || defined(CONFIG_PARAVIRT_TIME_ACCOUNTING)
+#if defined(CONFIG_IRQ_TIME_ACCOUNTING) || defined(CONFIG_PARAVIRT_TIME_ACCOUNTING) /* LPQ: skip */
 	s64 steal = 0, irq_delta = 0;
 #endif
-#ifdef CONFIG_IRQ_TIME_ACCOUNTING
+#ifdef CONFIG_IRQ_TIME_ACCOUNTING /* LPQ: skip */
 	irq_delta = irq_time_read(cpu_of(rq)) - rq->prev_irq_time;
 
 	/*
@@ -2130,7 +2140,7 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 	rq->prev_irq_time += irq_delta;
 	delta -= irq_delta;
 #endif
-#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING
+#ifdef CONFIG_PARAVIRT_TIME_ACCOUNTING  /* LPQ: skip */
 	if (static_branch((&paravirt_steal_rq_enabled))) {
 		u64 st;
 
@@ -2151,7 +2161,7 @@ static void update_rq_clock_task(struct rq *rq, s64 delta)
 
 	rq->clock_task += delta;
 
-#if defined(CONFIG_IRQ_TIME_ACCOUNTING) || defined(CONFIG_PARAVIRT_TIME_ACCOUNTING)
+#if defined(CONFIG_IRQ_TIME_ACCOUNTING) || defined(CONFIG_PARAVIRT_TIME_ACCOUNTING)  /* LPQ: skip */
 	if ((irq_delta + steal) && sched_feat(NONTASK_POWER))
 		sched_rt_avg_update(rq, irq_delta + steal);
 #endif
@@ -2722,7 +2732,7 @@ static void sched_ttwu_pending(void)
 	struct task_struct *p;
 
     //该lock是cpu相关的
-	raw_spin_lock(&rq->lock); /* 处在中断上下文，为什么需要加锁? */
+	raw_spin_lock(&rq->lock); /* 处在中断上下文，为什么需要加锁? 防止其他核进行pull或者push操作时，修改本rq */
 
 	while (llist) {
 		/* 获取一个待唤醒的进程 */
@@ -2874,13 +2884,15 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags)
 		p->sched_class->task_waking(p);
 
     /* important, 涉及到实时进程的调度策略 */
+	/* 为该task找到一个合适的运行cpu，也就是说，进程睡眠之前跟睡眠之后，可能不是在同一个cpu上运行 */
 	cpu = select_task_rq(p, SD_BALANCE_WAKE, wake_flags);
-	if (task_cpu(p) != cpu) {
+	if (task_cpu(p) != cpu) { /* 如果新找到的cpu与进程原来所属的cpu不同，重新设置进程所属的cpu */
 		wake_flags |= WF_MIGRATED;
 		set_task_cpu(p, cpu);
 	}
 #endif /* CONFIG_SMP */
 
+    /* 进程唤醒 */
 	ttwu_queue(p, cpu);
 stat:
 	ttwu_stat(p, cpu, wake_flags);
@@ -3234,6 +3246,7 @@ static void finish_task_switch(struct rq *rq, struct task_struct *prev)
 static inline void pre_schedule(struct rq *rq, struct task_struct *prev)
 {
 	if (prev->sched_class->pre_schedule)
+		pre_schedule_rt
 		prev->sched_class->pre_schedule(rq, prev);
 }
 
@@ -3245,6 +3258,7 @@ static inline void post_schedule(struct rq *rq)
 
 		raw_spin_lock_irqsave(&rq->lock, flags);
 		if (rq->curr->sched_class->post_schedule)
+			post_schedule_rt
 			rq->curr->sched_class->post_schedule(rq);
 		raw_spin_unlock_irqrestore(&rq->lock, flags);
 
@@ -4609,7 +4623,7 @@ need_resched:
 	preempt_disable();
 	cpu = smp_processor_id();
 	rq = cpu_rq(cpu);
-	rcu_note_context_switch(cpu);
+	rcu_note_context_switch(cpu); /* 更新全局状态，标识当前CPU发生上下文的切换 */
 	prev = rq->curr;  /* 当前运行的进程 */
 
 	schedule_debug(prev);
@@ -4632,7 +4646,7 @@ need_resched:
 			 * whether it wants to wake up a task to maintain
 			 * concurrency.
 			 */
-			if (prev->flags & PF_WQ_WORKER) {
+			if (prev->flags & PF_WQ_WORKER) { /* 如果当前进程是workqueue */
 				struct task_struct *to_wakeup;
 
 				to_wakeup = wq_worker_sleeping(prev, cpu);
@@ -4643,7 +4657,7 @@ need_resched:
 		switch_count = &prev->nvcsw;
 	}
 
-	pre_schedule(rq, prev);
+	pre_schedule(rq, prev);  /* 会发生pull操作 */
 
     /* 如果当前可运行的进程数为0 */
 	if (unlikely(!rq->nr_running))
@@ -4651,7 +4665,7 @@ need_resched:
 
 	put_prev_task(rq, prev);
 	next = pick_next_task(rq);
-	clear_tsk_need_resched(prev);
+	clear_tsk_need_resched(prev);  /* 清除调度的标志位 */
 	rq->skip_clock_update = 0;
 
 	if (likely(prev != next)) {
@@ -4659,6 +4673,7 @@ need_resched:
 		rq->curr = next;
 		++*switch_count;
 
+        /* 上下文切换 */
 		context_switch(rq, prev, next); /* unlocks the rq */
 		/*
 		 * The context switch have flipped the stack from under us
@@ -4668,10 +4683,11 @@ need_resched:
 		 */
 		cpu = smp_processor_id();
 		rq = cpu_rq(cpu);
-	} else
+	} else {
 		raw_spin_unlock_irq(&rq->lock);
+	}
 
-	post_schedule(rq);
+	post_schedule(rq);  /* 如果有task需要迁移到其他核，进行push操作 */
 
 	preempt_enable_no_resched();
 	if (need_resched())
@@ -6813,6 +6829,7 @@ static void set_rq_online(struct rq *rq)
 
 		for_each_class(class) {
 			if (class->rq_online)
+				rq_online_rt
 				class->rq_online(rq);
 		}
 	}
@@ -7150,12 +7167,13 @@ static void rq_attach_root(struct rq *rq, struct root_domain *rd)
 			old_rd = NULL;
 	}
 
-	atomic_inc(&rd->refcount);
+	atomic_inc(&rd->refcount);  /* 增加root_domain的引用计数 */
 	rq->rd = rd;
 
-	cpumask_set_cpu(rq->cpu, rd->span);
-	if (cpumask_test_cpu(rq->cpu, cpu_active_mask))
-		set_rq_online(rq);
+    /* 为指定的cpu，设置mask，比如cpu=0，那么设置 1<<0 */
+	cpumask_set_cpu(rq->cpu, rd->span);  /* 1 << cpu */
+	if (cpumask_test_cpu(rq->cpu, cpu_active_mask)) /* 检查该cpu是否包含在活跃cpu里面 */
+		set_rq_online(rq);  /* 如果在活跃cpu里面，置online的对应位 */
 
 	raw_spin_unlock_irqrestore(&rq->lock, flags);
 
@@ -8499,6 +8517,7 @@ void __init sched_init(void)
 	autogroup_init(&init_task);
 #endif /* CONFIG_CGROUP_SCHED */
 
+    /* 初始化每个cpu的rq */
 	for_each_possible_cpu(i) {
 		struct rq *rq;
 
@@ -8554,7 +8573,7 @@ void __init sched_init(void)
 		rq->active_balance = 0;
 		rq->next_balance = jiffies;
 		rq->push_cpu = 0;
-		rq->cpu = i;
+		rq->cpu = i;  /* 该rq所属的cpu */
 		rq->online = 0;
 		rq->idle_stamp = 0;
 		rq->avg_idle = 2*sysctl_sched_migration_cost;

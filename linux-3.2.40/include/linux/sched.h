@@ -1236,9 +1236,9 @@ struct task_struct {
 
 	int prio, static_prio, normal_prio;
 	unsigned int rt_priority;
-	const struct sched_class *sched_class;
-	struct sched_entity se;
-	struct sched_rt_entity rt;
+	const struct sched_class *sched_class;  /* 调度类 */
+	struct sched_entity se;  /* 非实时进程的调度实体 */
+	struct sched_rt_entity rt;  /* 实时进程的调度实体 */
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group *sched_task_group;
 #endif

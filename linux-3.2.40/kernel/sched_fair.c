@@ -4263,7 +4263,7 @@ static void idle_balance(int this_cpu, struct rq *this_rq)
 	this_rq->idle_stamp = this_rq->clock;
 
     /* 猜测: 对于rt task，直接在此返回 */
-	if (this_rq->avg_idle < sysctl_sched_migration_cost)
+	if (this_rq->avg_idle < sysctl_sched_migration_cost) /* sysctl_sched_migration_cost = 500 ms */
 		return;
 
 	/*

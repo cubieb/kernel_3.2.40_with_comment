@@ -118,6 +118,7 @@ static inline void smp_send_stop(void) { }
 /*
  *	These macros fold the SMP functionality into a single CPU system
  */
+ /* not here!!! */
 #define raw_smp_processor_id()			0
 static inline int up_smp_call_function(smp_call_func_t func, void *info)
 {
