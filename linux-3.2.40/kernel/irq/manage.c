@@ -1630,6 +1630,7 @@ int setup_percpu_irq(unsigned int irq, struct irqaction *act)
  *	the handler gets called with the interrupted CPU's instance of
  *	that variable.
  */
+ /* here!! */
 int request_percpu_irq(unsigned int irq, irq_handler_t handler,
 		       const char *devname, void __percpu *dev_id)
 {

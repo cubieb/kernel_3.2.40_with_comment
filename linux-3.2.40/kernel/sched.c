@@ -1296,6 +1296,7 @@ static inline void init_rq_hrtick(struct rq *rq)
 {
 }
 
+/* here!!! */
 static inline void init_hrtick(void)
 {
 }
@@ -8500,7 +8501,7 @@ void __init sched_init(void)
 	}
 
 #ifdef CONFIG_SMP
-	init_defrootdomain();
+	init_defrootdomain();  /* ≥ı ºªØroot domain */
 #endif
 
 	init_rt_bandwidth(&def_rt_bandwidth,

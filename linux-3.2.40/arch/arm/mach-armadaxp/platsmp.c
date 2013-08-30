@@ -121,13 +121,14 @@ int  boot_secondary(unsigned int cpu, struct task_struct *idle)
 	flush_cache_all();
 
 	/* Set resume control and address */
-	MV_REG_WRITE(AXP_CPU_RESUME_CTRL_REG, 0x0);
+	MV_REG_WRITE(AXP_CPU_RESUME_CTRL_REG, 0x0);  /* 这个寄存器可能已经没有了 */
 	MV_REG_WRITE(AXP_CPU_RESUME_ADDR_REG(cpu),
-			virt_to_phys(axp_secondary_startup));
+			virt_to_phys(axp_secondary_startup)); /* 将要执行的函数写入地址寄存器 */
 
 	dsb();
 
 	/* Kick secondary CPUs */
+	/* 复位cpu */
 	reg = MV_REG_READ(AXP_CPU_RESET_REG(cpu));
 	reg = reg & ~(1 << AXP_CPU_RESET_OFFS);
 	MV_REG_WRITE(AXP_CPU_RESET_REG(cpu), reg);
